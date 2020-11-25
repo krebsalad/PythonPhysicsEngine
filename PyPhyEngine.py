@@ -6,16 +6,33 @@ import time
 import math
 
 # main data class for positioning
-class Vec2d:
-    def __init__(self, _x, _y):
+class Vec:
+    def __init__(self, _x=0, _y=0, _z=0):
         self.x = _x
         self.y = _y
+        self.z = _z
 
-    def getRotatedVec(self, _angle=0):
+    def getRotatedVecZ(self, _angle=0):
         newX = math.cos(_angle) * self.x - math.sin(_angle) * self.y
         newY = math.sin(_angle) * self.x + math.cos(_angle) * self.y
-        return Vec2d(newX, newY)
+        newZ = self.z
+        return Vec(newX, newY, newZ)
     
+    def getRotatedVecY(self, _angle=0):
+        newX = math.cos(_angle) * self.x + math.sin(_angle) * self.z
+        newY = self.y
+        newZ = math.sin(_angle) * (-self.x) + math.cos(_angle) * self.z
+        return Vec(newX, newY, newZ)
+
+    def getRotatedVecX(self, _angle=0):
+        newX = self.x
+        newY = math.cos(_angle) * self.y - math.sin(_angle) * self.z
+        newZ = math.sin(_angle) * self.y + math.cos(_angle) * self.z
+        return Vec(newX, newY, newZ)
+
+    def getRotatedVec(self, _rotationX, _rotationY, _rotationZ):
+        return self.getRotatedVecZ(_rotationZ).getRotatedVecY(_rotationY).getRotatedVecX(_rotationX)
+
     def __getitem__(self, _key):
         if _key == 0:
             return self.x
@@ -29,33 +46,29 @@ class Vec2d:
         if _key == 1:
             self.y = _item
     
-    def __add__(self, _vec2d):
-        return Vec2d(self.x + _vec2d.x, self.y + _vec2d.y)
+    def __add__(self, _vec):
+        return Vec(self.x + _vec.x, self.y + _vec.y, self.z + _vec.z)
 
-    def __sub__(self, _vec2d):
-        return Vec2d(self.x - _vec2d.x, self.y - _vec2d.y)
+    def __sub__(self, _vec):
+        return Vec(self.x - _vec.x, self.y - _vec.y, self.z - _vec.z)
 
     def __truediv__(self, _num):
-        return Vec2d(self.x/_num, self.y/_num)
-
-    def asTuple(self, _round=False):
-        if _round:
-            return (int(self.x), int(self.y))
-        return (self.x, self.y)
+        return Vec(self.x/_num, self.y/_num, self.z/_num)
     
     def __mul__(self, _num):
-        return Vec2d(self.x * _num, self.y * _num)
+        return Vec(self.x * _num, self.y * _num, self.z * _num)
 
     def __str__(self):
-        return str(self.x) + "," + str(self.y)
+        return str(self.x) + "," + str(self.y) + "," + str(self.z)
 
-# utility functions for Vec2d
+# utility functions for Vec
 def InterpolatePositionsBetweenPoints(_vec1, _vec2, _points=5):
     positions = []
     step_x = (_vec2.x - _vec1.x) / _points
     step_y = (_vec2.y - _vec1.y) / _points
+    step_z = (_vec2.z - _vec1.z) / _points
     for n in range(1, _points):
-        positions.append(_vec1 + Vec2d(step_x * n, step_y * n))
+        positions.append(_vec1 + Vec(step_x * n, step_y * n, step_z * n))
     return positions
 
 def CalcTriangleSignArea(_pos1, _pos2, _pos3):
@@ -68,87 +81,139 @@ def IsPositionWithinTriangle(_position, _trianglePos1, _trianglePos2, _triangleP
     return (a1 < 0) == (a2 < 0) and (a2 < 0) == (a3 < 0)
 
 # A hitbox/rectangle used to detect collision
-class HitBox2d:
-    def __init__(self, _name, _ownerId, _shape, _relativePos=Vec2d(0,0), _relativeRot=0):
+class HitBox:
+    def __init__(self, _name, _ownerId, _shape, _relativePos=Vec(0,0,0), _relativeRot=Vec(0,0,0)):
         self.ownerId = _ownerId                 # id of entity
         self.shape = _shape                     # the width and height of the hitbox
         self.relativePos = _relativePos         # the position of the hitbox relative to origin (0,0)
         self.relativeRot = _relativeRot
         self.name = _name                       # the name of the hitbox
+        self.halfExtents = (self.shape/2)
 
-    def getBoundingRect(self, _worldPosition=Vec2d(0,0), _worldRotation=0, _offset=Vec2d(0,0)):
-        halfExtents = (self.shape/2)           
-        leftTop = self.relativePos - halfExtents - _offset       
-        rightBot = self.relativePos + halfExtents + _offset
-        leftBot = Vec2d(leftTop.x - _offset.x, self.relativePos.y + halfExtents.y + _offset.y)
-        rightTop = Vec2d(rightBot.x + _offset.x, self.relativePos.y - halfExtents.y - _offset.y)
+    def editHitBox(self, _relativePos=None, _relativeRot=None, _shape=None):
+        if _relativePos != None:
+            self.relativePos = _relativePos
+        if _relativeRot != None:
+            self.relativeRot = _relativePos
+        if _shape != None:
+            self.shape = _shape
 
-        leftTop = leftTop.getRotatedVec(self.relativeRot + _worldRotation) + _worldPosition
-        rightTop = rightTop.getRotatedVec(self.relativeRot + _worldRotation) + _worldPosition
-        leftBot = leftBot.getRotatedVec(self.relativeRot + _worldRotation) + _worldPosition
-        rightBot = rightBot.getRotatedVec(self.relativeRot + _worldRotation) + _worldPosition
-        return (leftTop, rightTop, leftBot, rightBot)
+    def getBoundingRect(self, _worldPosition=Vec(0,0,0), _worldRotation=Vec(0,0,0), _offset=Vec(0,0,0)):
+        self.halfExtents = (self.shape/2)
 
-# a Entity, holding pasic information about the positioning of the entity and how it interacts with the world
-class Entity2d:
-    def __init__(self, _name, _id, _position=Vec2d(0,0), _rotation=0, _physics2d=None, _updateCallBack=None):
+        f_leftTop = self.relativePos - self.halfExtents - _offset
+        b_rightBot = self.relativePos + self.halfExtents + _offset
+
+        f_rightTop = Vec(b_rightBot.x, f_leftTop.y, f_leftTop.z)
+        f_leftBot = Vec(f_leftTop.x, b_rightBot.y, f_leftTop.z)
+        f_rightBot = Vec(b_rightBot.x, b_rightBot.y, f_leftTop.z)
+
+        b_leftTop = Vec(f_leftTop.x, f_leftTop.y, b_rightBot.z)
+        b_rightTop = Vec(b_rightBot.x, f_leftTop.y, b_rightBot.z)
+        b_leftBot = Vec(f_leftTop.x, b_rightBot.y, b_rightBot.z)
+
+        rotation = self.relativeRot + _worldRotation
+        f_leftTop = f_leftTop.getRotatedVec(rotation.x, rotation.y, rotation.z) + _worldPosition
+        f_rightTop = f_rightTop.getRotatedVec(rotation.x, rotation.y, rotation.z) + _worldPosition
+        f_leftBot = f_leftBot.getRotatedVec(rotation.x, rotation.y, rotation.z) + _worldPosition
+        f_rightBot = f_rightBot.getRotatedVec(rotation.x, rotation.y, rotation.z) + _worldPosition
+
+        b_leftTop = b_leftTop.getRotatedVec(rotation.x, rotation.y, rotation.z) + _worldPosition
+        b_rightTop = b_rightTop.getRotatedVec(rotation.x, rotation.y, rotation.z) + _worldPosition
+        b_leftBot = b_leftBot.getRotatedVec(rotation.x, rotation.y, rotation.z) + _worldPosition
+        b_rightBot = b_rightBot.getRotatedVec(rotation.x, rotation.y, rotation.z) + _worldPosition
+
+        return [f_leftTop, f_rightTop, f_leftBot, f_rightBot, b_leftTop, b_rightTop, b_leftBot, b_rightBot]
+
+# a Entity, holding basic information about the positioning of the entity and how it interacts with the world
+class Entity:
+    def __init__(self, _name, _id, _position=Vec(0,0,0), _rotation=Vec(0,0,0), _physics=None, _updateCallBack=None):
         self.name = _name
         self.id = _id 
 
         self.hitBoxes = []
         self.position = _position
         self.rotation = _rotation
-        self.velocity = Vec2d(0,0)             # the velocity to be applied on the position (pixels per second), only applied when a non fixed physics entity is existing
+        self.velocity = Vec(0,0,0)             # the velocity to be applied on the position (pixels per second), only applied when a non fixed physics entity is existing
         
-        self.physics2d = _physics2d            # the entity holding information about the physics (requires a member function update(_scene, _entity) function to work)
+        self.physics = _physics            # the entity holding information about the physics (requires a member function update(_scene, _entity) function to work)
         self.blockedUp = False                 # applies restraints to the velocity
         self.blockedLeft = False
         self.blockedRight = False
         self.blockedDown = False
+        self.blockedFront = False
+        self.blockedBack = False
 
-        self.updateCallBack = _updateCallBack   # a function to call after apply basic physics, is also called without having a physics2d if set
+        self.updateCallBack = _updateCallBack   # a function to call after apply basic physics, is also called without having a physics if set
 
         self.color = (255,0,0) 
         
-    def createHitBox(self, _shape=Vec2d(15, 20), _relativePos=Vec2d(0,0), _relativeRot=0, _name="HitBox"):
+    def createHitBox(self, _shape, _relativePos=Vec(0,0,0), _relativeRot=Vec(0,0,0), _name="HitBox"):
         name = _name
         if _name == "HitBox":
             name = self.name + "_" + _name + "_" + str(len(self.hitBoxes))
         else:
             name = self.name + "_" + "HitBox" + "_" + _name
-        self.hitBoxes.append(HitBox2d(name, self.id, _shape, _relativePos, _relativeRot))
+        self.hitBoxes.append(HitBox(name, self.id, _shape, _relativePos, _relativeRot))
             
     def update(self, _scene):
         # pre update
-        if self.physics2d != None:
-            self.physics2d.preUpdate(_scene, self)
+        if self.physics != None:
+            self.physics.preUpdate(_scene, self)
 
         # callback user update
         if self.updateCallBack != None:
             self.updateCallBack(_scene, self)
 
         # update physics
-        if self.physics2d != None:
-            self.physics2d.afterUpdate(_scene, self)
+        if self.physics != None:
+            self.physics.afterUpdate(_scene, self)
         return
 
-    def getCollisionPositions(self, _points=5, _pixelOffset=Vec2d(3,3)):
+    def getCollisionPositions(self, _points=5, _pixelOffset=Vec(3,3,3)):
         # Interpolates outer edges of all hitboxes and returns them as lists
         bottomPositions = []
         topPositions = []
         leftPositions = []
         rightPositions = []
+        frontPositions = []
+        backPositions = []
         for hBox in self.hitBoxes:
-            leftTop, rightTop, leftBot, rightBot = hBox.getBoundingRect(self.position, self.rotation, _pixelOffset)
-            bottomPositions += InterpolatePositionsBetweenPoints(leftBot, rightBot)
-            topPositions += InterpolatePositionsBetweenPoints(leftTop, rightTop)
-            leftPositions += InterpolatePositionsBetweenPoints(leftTop, leftBot)
-            rightPositions += InterpolatePositionsBetweenPoints(rightTop, rightBot)
-        return (bottomPositions,topPositions,leftPositions,rightPositions)
+            f_leftTop, f_rightTop, f_leftBot, f_rightBot, b_leftTop, b_rightTop, b_leftBot, b_rightBot = hBox.getBoundingRect(self.position, self.rotation, _pixelOffset)
+            
+            # bottom collision points
+            bottomPositions += InterpolatePositionsBetweenPoints(f_leftBot, f_rightBot)
+            bottomPositions += InterpolatePositionsBetweenPoints(f_leftBot, f_leftBot)
+            bottomPositions += InterpolatePositionsBetweenPoints(f_rightBot, b_rightBot)
+            bottomPositions += InterpolatePositionsBetweenPoints(b_rightBot, b_leftBot)
+
+            # top collision points
+            topPositions += InterpolatePositionsBetweenPoints(f_leftTop, f_rightTop)
+            topPositions += InterpolatePositionsBetweenPoints(f_leftTop, f_leftTop)
+            topPositions += InterpolatePositionsBetweenPoints(f_rightTop, b_rightTop)
+            topPositions += InterpolatePositionsBetweenPoints(b_rightTop, b_leftTop)
+
+            # left
+            leftPositions += InterpolatePositionsBetweenPoints(f_leftTop, f_leftBot)
+            leftPositions += InterpolatePositionsBetweenPoints(b_leftTop, b_leftBot)
+
+            # right positions
+            rightPositions += InterpolatePositionsBetweenPoints(f_rightTop, f_rightBot)        
+            rightPositions += InterpolatePositionsBetweenPoints(b_leftTop, b_leftBot)
+
+            # front positions
+            frontPositions += InterpolatePositionsBetweenPoints(f_leftTop, f_leftBot)
+            frontPositions += InterpolatePositionsBetweenPoints(f_rightTop, f_rightBot)
+
+            # back positions
+            backPositions += InterpolatePositionsBetweenPoints(b_leftTop, b_leftBot)
+            backPositions += InterpolatePositionsBetweenPoints(b_rightTop, b_rightBot)
+
+        return [bottomPositions,topPositions,leftPositions,rightPositions,frontPositions,backPositions]
 
 # A class that can be use to enable hitbox detection for entities and holds properties with the regards to interactions done by or to ther entities
-class EntityPhysics2d:
-    def __init__(self, _fixed=True, _maxVelocity=Vec2d(1000, 1000), _friction=Vec2d(0,0)):    
+class EntityPhysics:
+    def __init__(self, _fixed=True, _maxVelocity=Vec(1000, 1000, 1000), _friction=Vec(0,0,0)):    
         self.fixed = _fixed                     # false if the entity is supposed to move
         self.friction = _friction               # the amount of friction to apply to other moving entities
         self.maxVelocity = _maxVelocity         # the maximum velocity (pixels per second) of an entity 
@@ -160,7 +225,7 @@ class EntityPhysics2d:
             if i == _entity.id:
                 continue
             meetingEntity = _scene.getEntity(i)
-            if meetingEntity.physics2d != None and (meetingEntity.physics2d.fixed and _entityMeetingIsFixed) or (not meetingEntity.physics2d.fixed and not _entityMeetingIsFixed):
+            if meetingEntity.physics != None and (meetingEntity.physics.fixed and _entityMeetingIsFixed) or (not meetingEntity.physics.fixed and not _entityMeetingIsFixed):
                 return (True, meetingEntity)
         return (False, None)
 
@@ -173,23 +238,42 @@ class EntityPhysics2d:
         _entity.velocity += _scene.gravity
 
         # get collision points to check on
-        bottomPositions,topPositions,leftPositions,rightPositions = _entity.getCollisionPositions()
+        bottomPositions,topPositions,leftPositions,rightPositions,frontPositions,backPositions = _entity.getCollisionPositions()
 
         # check if touching ground or not and apply corresponding physics
         downFound, ground = self.getFirstMeetingPhysicsEntity(_scene, _entity, bottomPositions, True)
         if downFound:
             _entity.blockedDown = True
 
-            # apply friction when touching ground
             if _entity.velocity.x < 0:
-                _entity.velocity += ground.physics2d.friction
+                _entity.velocity.x += ground.physics.friction.x
                 if _entity.velocity.x > 0:
                     _entity.velocity.x = 0
                     
             elif _entity.velocity.x > 0:
-                _entity.velocity -= ground.physics2d.friction
+                _entity.velocity.x -= ground.physics.friction.x
                 if _entity.velocity.x < 0:
                     _entity.velocity.x = 0
+
+            if _entity.velocity.y < 0:
+                _entity.velocity.y += ground.physics.friction.y
+                if _entity.velocity.y > 0:
+                    _entity.velocity.y = 0
+                    
+            elif _entity.velocity.y > 0:
+                _entity.velocity.y -= ground.physics.friction.y
+                if _entity.velocity.y < 0:
+                    _entity.velocity.y = 0
+
+            if _entity.velocity.z < 0:
+                _entity.velocity.z += ground.physics.friction.z
+                if _entity.velocity.z > 0:
+                    _entity.velocity.z = 0
+                    
+            elif _entity.velocity.z > 0:
+                _entity.velocity.z -= ground.physics.friction.z
+                if _entity.velocity.z < 0:
+                    _entity.velocity.z = 0      
 
         if _entity.blockedDown and not downFound:
             _entity.blockedDown = False
@@ -218,12 +302,29 @@ class EntityPhysics2d:
         if _entity.blockedLeft and not leftFound:
             _entity.blockedLeft = False
 
+        # check if touching front
+        frontFound = self.getFirstMeetingPhysicsEntity(_scene, _entity, frontPositions, True)[0]
+        if frontFound:
+            _entity.blockedFront = True
+
+        if _entity.blockedFront and not frontFound:
+            _entity.blockedFront = False
+
+        # check if touching back
+        backFound = self.getFirstMeetingPhysicsEntity(_scene, _entity, backPositions, True)[0]
+        if backFound:
+            _entity.blockedBack = True
+
+        if _entity.blockedBack and not backFound:
+            _entity.blockedBack = False
+
+
     def afterUpdate(self, _scene, _entity):
         # skip if fixed entity 
         if self.fixed:
             return
 
-        # apply restraints
+        # apply restraints <TODO> apply the restraints based on the direction of the entity is facing
         if _entity.blockedDown and _entity.velocity.y > 0:
             _entity.velocity.y = 0
 
@@ -236,7 +337,13 @@ class EntityPhysics2d:
         if _entity.blockedRight and _entity.velocity.x > 0:
             _entity.velocity.x = 0
 
-        # limit velocity
+        if _entity.blockedBack and _entity.velocity.z > 0:
+            _entity.velocity.z = 0
+
+        if _entity.blockedFront and _entity.velocity.z < 0:
+            _entity.velocity.z = 0
+
+        # limit velocity <TODO, apply based on direction and norm>
         if _entity.velocity.y > self.maxVelocity.y:
             _entity.velocity.y = self.maxVelocity.y
         if _entity.velocity.y < 0 - self.maxVelocity.y:
@@ -245,43 +352,18 @@ class EntityPhysics2d:
         if _entity.velocity.x > self.maxVelocity.x:
             _entity.velocity.x = self.maxVelocity.x
         if _entity.velocity.x < 0 - self.maxVelocity.x:
-            _entity.velocity.x = 0 - self.maxVelocity.x    
+            _entity.velocity.x = 0 - self.maxVelocity.x
+
+        if _entity.velocity.z > self.maxVelocity.z:
+            _entity.velocity.z = self.maxVelocity.z
+        if _entity.velocity.z < 0 - self.maxVelocity.z:
+            _entity.velocity.z = 0 - self.maxVelocity.z 
 
         return
 
-# In the works!!!!
-class Animation2d:
-    def __init__(self, _id, _center=(0,0), _imagePaths=[], _playBackSpeed=1):
-        for path in _imagePaths:
-            self.addImage(path)
-        self.images = []
-        self.center = _center
-        self.playBackSpeed = _playBackSpeed
-        self.currentImageIndex = -1
-        self.startTime = time.time()
-    
-    def addImage(self, _path):
-        return False
-
-    def getOpencvImage(self):
-        return None
-
-    def draw(self, _position, _inFrame):
-        if self.currentImageIndex == -1:
-            return None
-        
-        timePerFrame = self.playBackSpeed / self.currentImageIndex
-        if time.time() > self.startTime + (timePerFrame * (self.currentImageIndex + 1)):
-            self.startTime = time.time()
-            self.currentImageIndex += 1
-            if self.currentImageIndex > len(self.images):
-                self.currentImageIndex = 0
-
-        return self.images[self.currentImageIndex]
-
 # The
-class Scene2d:
-    def __init__(self, _id, _gravity=Vec2d(0, 1), _ticksPerSecond=1000):
+class Scene:
+    def __init__(self, _id, _gravity=Vec(0, 1, 0), _ticksPerSecond=1000):
         self.id = _id                               # a unique id of the scene
 
         self.entities = []                       # a list of enties to draw in the scene
@@ -297,11 +379,9 @@ class Scene2d:
         hitBoxes = []
         for gEntity in self.entities:
             for hBox in gEntity.hitBoxes:
-                leftTop, rightTop, leftBot, rightBot = hBox.getBoundingRect(gEntity.position)
-                
-                if IsPositionWithinTriangle(_position, leftBot, rightBot, rightTop) or IsPositionWithinTriangle(_position, rightTop, leftTop, leftBot):
-                # if _position.x >= leftTop.x and _position.x <= rightBot.x and _position.y >= leftTop.y and _position.y <= rightBot.y: 
-                    hitBoxes.append(hBox)  
+                    # 
+
+                    continue
         return hitBoxes
 
     def getEntitysMeetingPositions(self, _positions):
@@ -347,19 +427,38 @@ class Scene2d:
         timePassed = time.time() - self.lastUpdateTime
         self.lastUpdateTime = time.time()
         for gEntity in self.entities:
-            if gEntity.physics2d != None and not gEntity.physics2d.fixed:
+            if gEntity.physics != None and not gEntity.physics.fixed:
                 gEntity.position += gEntity.velocity * timePassed
         return
 
 # The renderer class (opencv for ease)
 class RendererCv:
-    def __init__(self, _windowShape=Vec2d(720, 1020)):
+    def __init__(self, _2d=False, _windowShape=Vec(1020, 720)):
         self.windowShape = _windowShape                                         # the size of the window/ image to draw
-        self.baseFrame = np.zeros(self.windowShape.asTuple(True), np.uint8)     # a default image corresponding the window sizes
+        self.baseFrame = np.zeros((self.windowShape.y, self.windowShape.x), np.uint8)     # a default image corresponding the window sizes
         self.lastFrame = self.baseFrame                                         # the frame to be presented                                     
         self.keyBuffer = [''] * 5                                              # currently pressed keys, a maximum of 10
         self.backBuffer = []                                                    # the images that are ready to be presented
+        self.twoD = _2d
     
+    def transformPositionToViewPoint(self, _position):
+        position = _position
+
+        # apply aspectratio
+        position.y *= self.windowShape.y/self.windowShape.x
+
+        # apply perspective transformation in case of 3D, assuming view will never rotate but rather the world
+        if not self.twoD:
+            if position.z <= 0:
+                position /= -(position.z/100)
+            else:
+                position *= (position.z * 100)
+        
+        # move coordinates to window space
+        position += (self.windowShape/2)
+        point = (int(position.x), int(position.y))
+        return point
+
     def show(self):
         # show the image
         if len(self.backBuffer) != 0:
@@ -373,15 +472,41 @@ class RendererCv:
         self.keyBuffer.append(key)
         self.keyBuffer.pop(0)
 
-        # draw the entities
+        # draw the entities 
         newFrame = self.baseFrame.copy()
         for gEntity in _scene.entities:
             for hBox in gEntity.hitBoxes:
-                leftTop, rightTop, leftBot, rightBot = hBox.getBoundingRect(gEntity.position)
-                cv2.line(newFrame, leftTop.asTuple(True), rightTop.asTuple(True), gEntity.color, 1)
-                cv2.line(newFrame, leftTop.asTuple(True), leftBot.asTuple(True), gEntity.color, 1)
-                cv2.line(newFrame, rightBot.asTuple(True), rightTop.asTuple(True), gEntity.color, 1)
-                cv2.line(newFrame, rightBot.asTuple(True), leftBot.asTuple(True), gEntity.color, 1)
+                f_leftTop, f_rightTop, f_leftBot, f_rightBot, b_leftTop, b_rightTop, b_leftBot, b_rightBot = hBox.getBoundingRect(gEntity.position)
+
+                p_flT = self.transformPositionToViewPoint(f_leftTop)
+                p_frT = self.transformPositionToViewPoint(f_rightTop)
+                p_frB = self.transformPositionToViewPoint(f_rightBot)
+                p_flB = self.transformPositionToViewPoint(f_leftBot)
+
+                p_blT = self.transformPositionToViewPoint(b_leftTop)
+                p_brT = self.transformPositionToViewPoint(b_rightTop)
+                p_brB = self.transformPositionToViewPoint(b_rightBot)
+                p_blB = self.transformPositionToViewPoint(b_leftBot)
+
+                # draw front
+                cv2.line(newFrame, p_flT, p_frT, gEntity.color, 1)
+                cv2.line(newFrame, p_flT, p_flB, gEntity.color, 1)
+                cv2.line(newFrame, p_frB, p_frT, gEntity.color, 1)
+                cv2.line(newFrame, p_flB, p_frB, gEntity.color, 1)
+
+                # draw back
+                cv2.line(newFrame, p_blT, p_brT, gEntity.color, 1)
+                cv2.line(newFrame, p_blT, p_blB, gEntity.color, 1)
+                cv2.line(newFrame, p_brB, p_brT, gEntity.color, 1)
+                cv2.line(newFrame, p_blB, p_brB, gEntity.color, 1)
+
+                # draw sides
+                cv2.line(newFrame, p_flT, p_blT, gEntity.color, 1)
+                cv2.line(newFrame, p_frT, p_brT, gEntity.color, 1)
+                cv2.line(newFrame, p_flB, p_blB, gEntity.color, 1)
+                cv2.line(newFrame, p_frB, p_brB, gEntity.color, 1)
+
+                # <TODO draw z axis in smaller scale>
                  
         self.backBuffer.append(newFrame)
         return True
