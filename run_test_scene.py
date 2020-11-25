@@ -1,7 +1,8 @@
 from PyPhyEngine import Engine, Scene, Entity, EntityPhysics, HitBox, Vec, generateUuid
+from PyPhyEngine import RendererCv
 
 # init
-engine = Engine()
+engine = Engine(RendererCv(_2d=False, _windowShape=Vec(1020, 720), _cameraPosition=Vec(0,0,-500), _cameraRotation=Vec(0,-0.5,0)))
 
 # loading
 scene = Scene(_id=generateUuid(), _gravity=Vec(0, 3, 0))
@@ -19,8 +20,16 @@ def test_char_movement_callback(_scene, _entity): # executed 1000 times a second
     if engine.checkKeyPress('d'):       
         if _entity.velocity.x < _entity.physics.maxVelocity.x:
             _entity.velocity.x += character_moveSpeed.x
+
+    if engine.checkKeyPress('w'):
+        if _entity.velocity.z > 0 - _entity.physics.maxVelocity.z:
+            _entity.velocity.z -= character_moveSpeed.z
     
-    if engine.checkKeyPress('w') and _entity.blockedDown and jumping_timer == 0:    
+    if engine.checkKeyPress('s'):       
+        if _entity.velocity.z < _entity.physics.maxVelocity.z:
+            _entity.velocity.z += character_moveSpeed.z
+    
+    if engine.checkKeyPress(' ') and _entity.blockedDown and jumping_timer == 0:    
         _entity.velocity.y -= character_moveSpeed.y
         jumping_timer = 15
 

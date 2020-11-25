@@ -67,7 +67,7 @@ def InterpolatePositionsBetweenPoints(_vec1, _vec2, _points=5):
     step_x = (_vec2.x - _vec1.x) / _points
     step_y = (_vec2.y - _vec1.y) / _points
     step_z = (_vec2.z - _vec1.z) / _points
-    for n in range(1, _points):
+    for n in range(1, _points-1):
         positions.append(_vec1 + Vec(step_x * n, step_y * n, step_z * n))
     return positions
 
@@ -124,6 +124,24 @@ class HitBox:
         b_rightBot = b_rightBot.getRotatedVec(rotation.x, rotation.y, rotation.z) + _worldPosition
 
         return [f_leftTop, f_rightTop, f_leftBot, f_rightBot, b_leftTop, b_rightTop, b_leftBot, b_rightBot]
+
+    def doesPositionMeet(self, _position, _worldPosition=Vec(0,0,0), _worldRotation=Vec(0,0,0), _offset=Vec(0,0,0)):
+        f_leftTopOrigin = self.relativePos - self.halfExtents - _offset
+        b_rightBotOrigin = self.relativePos + self.halfExtents + _offset
+
+        rotation = self.relativeRot + _worldRotation
+        positionOrigin = (_position - _worldPosition).getRotatedVec(-rotation.x, -rotation.y, -rotation.z)
+
+        bX = (positionOrigin.x >= f_leftTopOrigin.x and positionOrigin.x <= b_rightBotOrigin.x)
+        bY = (positionOrigin.y >= f_leftTopOrigin.y and positionOrigin.y <= b_rightBotOrigin.y)
+        bZ = (positionOrigin.z >= f_leftTopOrigin.z and positionOrigin.z <= b_rightBotOrigin.z)
+        
+        if bX and bY and bZ:
+            return True
+        return False
+
+
+        
 
 # a Entity, holding basic information about the positioning of the entity and how it interacts with the world
 class Entity:
@@ -220,7 +238,7 @@ class EntityPhysics:
               
     def getFirstMeetingPhysicsEntity(self, _scene, _entity, _positions, _entityMeetingIsFixed=True):
         # returns the first entity a given entity collides with
-        entitiesMeetingIds = _scene.getEntitysMeetingPositions(_positions)
+        entitiesMeetingIds = _scene.getEntiesMeetingPositions(_positions)
         for i in entitiesMeetingIds:
             if i == _entity.id:
                 continue
@@ -379,12 +397,12 @@ class Scene:
         hitBoxes = []
         for gEntity in self.entities:
             for hBox in gEntity.hitBoxes:
-                    # 
-
+                    if hBox.doesPositionMeet(_position, gEntity.position, gEntity.rotation):
+                        hitBoxes.append(hBox)
                     continue
         return hitBoxes
 
-    def getEntitysMeetingPositions(self, _positions):
+    def getEntiesMeetingPositions(self, _positions):
         entityIds = []
         for position in _positions:
             hitBoxesMeeting = self.getHitBoxesMeetingPosition(position)
@@ -433,16 +451,18 @@ class Scene:
 
 # The renderer class (opencv for ease)
 class RendererCv:
-    def __init__(self, _2d=False, _windowShape=Vec(1020, 720)):
+    def __init__(self, _2d=False, _windowShape=Vec(1020, 720), _cameraPosition=Vec(0,0,0), _cameraRotation=Vec(0,0,0)):
         self.windowShape = _windowShape                                         # the size of the window/ image to draw
         self.baseFrame = np.zeros((self.windowShape.y, self.windowShape.x), np.uint8)     # a default image corresponding the window sizes
         self.lastFrame = self.baseFrame                                         # the frame to be presented                                     
         self.keyBuffer = [''] * 5                                              # currently pressed keys, a maximum of 10
         self.backBuffer = []                                                    # the images that are ready to be presented
         self.twoD = _2d
+        self.cameraPosition = _cameraPosition
+        self.cameraRotation = _cameraRotation
     
     def transformPositionToViewPoint(self, _position):
-        position = _position
+        position = _position.getRotatedVec(self.cameraRotation.x, self.cameraRotation.y, self.cameraRotation.z) + self.cameraPosition
 
         # apply aspectratio
         position.y *= self.windowShape.y/self.windowShape.x
@@ -450,9 +470,9 @@ class RendererCv:
         # apply perspective transformation in case of 3D, assuming view will never rotate but rather the world
         if not self.twoD:
             if position.z <= 0:
-                position /= -(position.z/100)
+                position /= -(position.z/250)
             else:
-                position *= (position.z * 100)
+                position *= (position.z * 250)
         
         # move coordinates to window space
         position += (self.windowShape/2)
@@ -476,7 +496,7 @@ class RendererCv:
         newFrame = self.baseFrame.copy()
         for gEntity in _scene.entities:
             for hBox in gEntity.hitBoxes:
-                f_leftTop, f_rightTop, f_leftBot, f_rightBot, b_leftTop, b_rightTop, b_leftBot, b_rightBot = hBox.getBoundingRect(gEntity.position)
+                f_leftTop, f_rightTop, f_leftBot, f_rightBot, b_leftTop, b_rightTop, b_leftBot, b_rightBot = hBox.getBoundingRect(gEntity.position, gEntity.rotation)
 
                 p_flT = self.transformPositionToViewPoint(f_leftTop)
                 p_frT = self.transformPositionToViewPoint(f_rightTop)
